@@ -1,140 +1,16 @@
-const DROP_PRESETS = {
-  light: {
-    noDropMult: 0.9,
-    bossNoDropMult: 0.8,
-    ratioDivisorMult: 0.95,
-    tcMeaningfulBonus: 1
-  },
-  medium: {
-    noDropMult: 0.75,
-    bossNoDropMult: 0.6,
-    ratioDivisorMult: 0.85,
-    tcMeaningfulBonus: 2
-  },
-  high: {
-    noDropMult: 0.6,
-    bossNoDropMult: 0.45,
-    ratioDivisorMult: 0.75,
-    tcMeaningfulBonus: 3
-  }
+const QUALITY_MULTIPLIERS = {
+  unique: 50,
+  set: 25,
+  rare: 5
 };
 
-const QUVER_PRESETS = {
-  large_stack: {
-    maxstack: 4000
-  },
-  replenishing_like: {
-    maxstack: 1200
-  }
-};
-
-const TARGETED_UNIQUES = [
-  "The Countess",
-  "Pindleskin",
-  "Eldritch the Rectifier",
-  "Shenk the Overseer",
-  "Nihlathak"
-];
-
-function getConfigValue(id, fallback) {
-  if (!globalThis.config || config[id] === undefined || config[id] === null) {
-    return fallback;
-  }
-  return config[id];
-}
+const QUIVER_PRICE = 117;
+const QUIVER_STACK = 100;
+const QUIVER_REFILL_RATE = 100;
 
 function asInt(value, fallback = 0) {
   const parsed = parseInt(value, 10);
-  if (Number.isNaN(parsed)) {
-    return fallback;
-  }
-  return parsed;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function getRowName(row) {
-  return (
-    row["Treasure Class"] ||
-    row["treasure class"] ||
-    row.Name ||
-    row.name ||
-    ""
-  );
-}
-
-function looksLikeBossOrChampion(tcName) {
-  const lower = tcName.toLowerCase();
-  return (
-    lower.includes("boss") ||
-    lower.includes("champ") ||
-    lower.includes("unique") ||
-    lower.includes("andariel") ||
-    lower.includes("duriel") ||
-    lower.includes("mephisto") ||
-    lower.includes("diablo") ||
-    lower.includes("baal")
-  );
-}
-
-function collectNumberedColumns(row, prefix) {
-  return Object.keys(row)
-    .filter((k) => k.startsWith(prefix))
-    .sort((a, b) => asInt(a.slice(prefix.length), 0) - asInt(b.slice(prefix.length), 0));
-}
-
-function applyDropTuning() {
-  const presetName = getConfigValue("dropIntensity", "medium");
-  const preset = DROP_PRESETS[presetName] || DROP_PRESETS.medium;
-
-  const treasureClasses = D2RMM.readTsv("global/excel/TreasureClassEx.txt");
-  treasureClasses.forEach((row) => {
-    const tcName = getRowName(row);
-    const isBossLike = looksLikeBossOrChampion(tcName);
-
-    if (row.NoDrop !== undefined) {
-      const originalNoDrop = asInt(row.NoDrop, 0);
-      const mult = isBossLike ? preset.bossNoDropMult : preset.noDropMult;
-      row.NoDrop = String(clamp(Math.floor(originalNoDrop * mult), 0, 65535));
-    }
-
-    const itemColumns = collectNumberedColumns(row, "Item");
-    itemColumns.forEach((itemCol) => {
-      const idx = itemCol.slice(4);
-      const probCol = `Prob${idx}`;
-      if (row[probCol] === undefined) {
-        return;
-      }
-      const item = String(row[itemCol] || "").toLowerCase();
-      const isMeaningful =
-        item.includes("armo") ||
-        item.includes("weap") ||
-        item.includes("jewl") ||
-        item.includes("rune") ||
-        item.includes("good");
-      if (!isMeaningful) {
-        return;
-      }
-      const prob = asInt(row[probCol], 0);
-      row[probCol] = String(clamp(prob + preset.tcMeaningfulBonus, 0, 65535));
-    });
-  });
-  D2RMM.writeTsv("global/excel/TreasureClassEx.txt", treasureClasses);
-
-  const itemRatio = D2RMM.readTsv("global/excel/ItemRatio.txt");
-  itemRatio.forEach((row) => {
-    ["UniqueDivisor", "SetDivisor", "RareDivisor"].forEach((col) => {
-      if (row[col] === undefined) {
-        return;
-      }
-      const oldValue = asInt(row[col], 1);
-      const tuned = Math.max(1, Math.floor(oldValue * preset.ratioDivisorMult));
-      row[col] = String(tuned);
-    });
-  });
-  D2RMM.writeTsv("global/excel/ItemRatio.txt", itemRatio);
+  return Number.isNaN(parsed) ? fallback : parsed;
 }
 
 function cloneRow(row) {
@@ -145,15 +21,37 @@ function cloneRow(row) {
   return out;
 }
 
+function setIfPresent(row, keys, value) {
+  keys.forEach((key) => {
+    if (row[key] !== undefined) {
+      row[key] = String(value);
+    }
+  });
+}
+
+function tuneQualityRolls() {
+  const itemRatio = D2RMM.readTsv("global/excel/ItemRatio.txt");
+  itemRatio.forEach((row) => {
+    if (row.UniqueDivisor !== undefined) {
+      row.UniqueDivisor = String(Math.max(1, Math.floor(asInt(row.UniqueDivisor, 1) / QUALITY_MULTIPLIERS.unique)));
+    }
+    if (row.SetDivisor !== undefined) {
+      row.SetDivisor = String(Math.max(1, Math.floor(asInt(row.SetDivisor, 1) / QUALITY_MULTIPLIERS.set)));
+    }
+    if (row.RareDivisor !== undefined) {
+      row.RareDivisor = String(Math.max(1, Math.floor(asInt(row.RareDivisor, 1) / QUALITY_MULTIPLIERS.rare)));
+    }
+
+    // D2 quality rolls do not expose a strict "never magic" switch in ItemRatio.
+    // Set to a huge divisor so magic drops are effectively suppressed.
+    if (row.MagicDivisor !== undefined) {
+      row.MagicDivisor = "1000000000";
+    }
+  });
+  D2RMM.writeTsv("global/excel/ItemRatio.txt", itemRatio);
+}
+
 function upsertCornucopiaQuivers() {
-  const enabled = !!getConfigValue("enableCornucopiaQuivers", true);
-  if (!enabled) {
-    return;
-  }
-
-  const style = getConfigValue("cornucopiaStyle", "large_stack");
-  const quiverPreset = QUVER_PRESETS[style] || QUVER_PRESETS.large_stack;
-
   const misc = D2RMM.readTsv("global/excel/misc.txt");
   const baseArrow = misc.find((r) => r.code === "aqv");
   const baseBolt = misc.find((r) => r.code === "cqv");
@@ -162,94 +60,93 @@ function upsertCornucopiaQuivers() {
     return;
   }
 
-  function upsert(baseRow, code, nameStr) {
+  function applyQuiverRow(baseRow, code, nameStr) {
     let row = misc.find((r) => r.code === code);
     if (!row) {
       row = cloneRow(baseRow);
       row.code = code;
       misc.push(row);
     }
+
     row.namestr = nameStr;
     row.spawnable = "1";
-    row.level = "45";
-    row.levelreq = "40";
-    row.maxstack = String(quiverPreset.maxstack);
-    row.cost = String(Math.max(asInt(baseRow.cost, 1), 1) * 5);
+    row.level = "1";
+    row.levelreq = "1";
+    row.cost = String(QUIVER_PRICE);
+    if (row["gamble cost"] !== undefined) {
+      row["gamble cost"] = String(QUIVER_PRICE);
+    }
+    row.maxstack = String(QUIVER_STACK);
+
+    // Keep appearance/behavior close to normal quivers while forcing fixed quantity.
+    setIfPresent(row, ["minstack", "min stack"], QUIVER_STACK);
+    setIfPresent(row, ["spawnstack", "spawn stack"], QUIVER_STACK);
+
+    // Try to force vendor stocking by enabling all Akara-related columns if they exist.
+    Object.keys(row).forEach((key) => {
+      const lowered = key.toLowerCase();
+      if (lowered.includes("akara")) {
+        if (lowered.includes("magic")) {
+          row[key] = "0";
+        } else if (lowered.includes("min")) {
+          row[key] = "1";
+        } else if (lowered.includes("max")) {
+          row[key] = "1";
+        } else {
+          row[key] = "1";
+        }
+      }
+    });
   }
 
-  upsert(baseArrow, "cqa", "mod_cornucopia_arrows");
-  upsert(baseBolt, "cqb", "mod_cornucopia_bolts");
+  applyQuiverRow(baseArrow, "cqa", "mod_cornucopia_arrows");
+  applyQuiverRow(baseBolt, "cqb", "mod_cornucopia_bolts");
   D2RMM.writeTsv("global/excel/misc.txt", misc);
 }
 
-function tcMatchesSource(tcName, sourceMode) {
-  const lower = tcName.toLowerCase();
-  const isActBoss =
-    lower.includes("andariel") ||
-    lower.includes("duriel") ||
-    lower.includes("mephisto") ||
-    lower.includes("diablo") ||
-    lower.includes("baal");
-
-  if (sourceMode === "boss_only") {
-    return isActBoss;
-  }
-  if (sourceMode === "boss_plus_targeted") {
-    return (
-      isActBoss ||
-      TARGETED_UNIQUES.some((name) => lower.includes(name.toLowerCase()))
-    );
-  }
-  if (sourceMode === "global_rare") {
-    return lower.includes("unique") || lower.includes("champ");
-  }
-  return false;
-}
-
-function injectQuiversIntoTreasureClasses() {
-  const enabled = !!getConfigValue("enableCornucopiaQuivers", true);
-  if (!enabled) {
-    return;
-  }
-  const sourceMode = getConfigValue("quiverSource", "boss_only");
-  const dropIntensity = getConfigValue("dropIntensity", "medium");
-  const baseWeight = dropIntensity === "high" ? 3 : dropIntensity === "light" ? 1 : 2;
-
-  const treasureClasses = D2RMM.readTsv("global/excel/TreasureClassEx.txt");
-  treasureClasses.forEach((row) => {
-    const tcName = getRowName(row);
-    if (!tcMatchesSource(tcName, sourceMode)) {
-      return;
+function addRefillAffixToQuivers() {
+  // Replenish quantity is an item stat, but exact "100 per second" is not directly exposed.
+  // We add a very strong replenish stat via automagic to approximate the requested behavior.
+  const automagic = D2RMM.readTsv("global/excel/automagic.txt");
+  let row = automagic.find((r) => r.Name === "CornucopiaRefill");
+  if (!row) {
+    row = {};
+    // Keep a minimal but valid row shape by cloning first entry when possible.
+    if (automagic[0]) {
+      Object.keys(automagic[0]).forEach((k) => {
+        row[k] = "";
+      });
     }
+    row.Name = "CornucopiaRefill";
+    automagic.push(row);
+  }
 
-    const itemColumns = collectNumberedColumns(row, "Item");
-    const hasCqa = itemColumns.some((col) => row[col] === "cqa");
-    const hasCqb = itemColumns.some((col) => row[col] === "cqb");
-    if (hasCqa && hasCqb) {
-      return;
+  row.enabled = "1";
+  row.classspecific = "";
+  row.divide = "1";
+  row.multiply = "1";
+  row.itype1 = "aqv";
+  row.itype2 = "cqv";
+  row.mod1code = "rep-qty";
+  row.mod1min = String(QUIVER_REFILL_RATE);
+  row.mod1max = String(QUIVER_REFILL_RATE);
+  row.spawnable = "1";
+  row.frequency = "1";
+
+  D2RMM.writeTsv("global/excel/automagic.txt", automagic);
+
+  const misc = D2RMM.readTsv("global/excel/misc.txt");
+  misc.forEach((r) => {
+    if (r.code === "cqa" || r.code === "cqb") {
+      if (r["auto prefix"] !== undefined) {
+        r["auto prefix"] = "CornucopiaRefill";
+      }
     }
-
-    const emptySlots = itemColumns.filter((col) => String(row[col] || "").trim() === "");
-    if (emptySlots.length < 2) {
-      return;
-    }
-
-    const first = emptySlots[0];
-    const second = emptySlots[1];
-    const firstIdx = first.slice(4);
-    const secondIdx = second.slice(4);
-    row[first] = "cqa";
-    row[`Prob${firstIdx}`] = String(baseWeight);
-    row[second] = "cqb";
-    row[`Prob${secondIdx}`] = String(baseWeight);
   });
-
-  D2RMM.writeTsv("global/excel/TreasureClassEx.txt", treasureClasses);
+  D2RMM.writeTsv("global/excel/misc.txt", misc);
 }
 
 function addLocalizationStubs() {
-  // D2RMM mods commonly ship localization JSON files under local/lng/strings.
-  // We only create stubs if a target file already exists in merged data.
   const candidates = [
     "local/lng/strings/item-names.json",
     "local/lng/strings/item-name.json"
@@ -261,13 +158,12 @@ function addLocalizationStubs() {
       json.mod_cornucopia_bolts = "Cornucopia Bolts";
       D2RMM.writeJson(path, json);
     } catch (err) {
-      // Safe no-op when a specific localization file is not present in current setup.
+      // No-op if not present in current install.
     }
   });
 }
 
-applyDropTuning();
+tuneQualityRolls();
 upsertCornucopiaQuivers();
-injectQuiversIntoTreasureClasses();
+addRefillAffixToQuivers();
 addLocalizationStubs();
-

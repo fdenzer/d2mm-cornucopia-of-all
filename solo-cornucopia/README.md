@@ -2,28 +2,26 @@
 
 This folder is a ready-to-drop D2RMM mod:
 
-- `mod.json`: metadata + user config options
-- `mod.js`: drop tuning + Cornucopia quiver injection logic
+- `mod.json`: metadata
+- `mod.js`: fixed behavior logic
 
 ## What this mod currently changes
 
-- Tunes `TreasureClassEx.txt` to reduce no-drop pressure and slightly bias meaningful item picks.
-- Tunes `ItemRatio.txt` to improve unique/set/rare odds by reducing divisors.
+- Tunes `ItemRatio.txt` with fixed quality rates:
+  - `Rare`: 5x
+  - `Set`: 25x
+  - `Unique`: 50x
+  - `Magic`: heavily suppressed via very large `MagicDivisor`
 - Adds two quiver base items in `misc.txt`:
   - `cqa` (`Cornucopia Arrows`)
   - `cqb` (`Cornucopia Bolts`)
-- Injects those quivers into selected treasure classes based on config.
-
-## D2RMM Config Options
-
-- `Drop Intensity`: `light | medium | high`
-- `Enable Cornucopia Quivers`: on/off
-- `Cornucopia Style`: `large_stack | replenishing_like`
-- `Quiver Source`: `boss_only | boss_plus_targeted | global_rare`
+- Attempts to make Akara sell both quivers with fixed store price `117`.
+- Forces quiver stack-related fields to `100` where supported.
+- Adds a strong replenish-quantity automagic entry targeted at quivers.
 
 ## Notes
 
 - The script is defensive against missing files/columns, but always test in offline single-player.
+- Exact "100 per second" replenish timing is engine-limited; this mod approximates the strongest practical refill behavior through `rep-qty`.
 - Localization is attempted through common JSON targets if present in your merged data.
 - If another mod edits the same tables, load order determines final values.
-
