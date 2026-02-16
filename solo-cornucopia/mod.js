@@ -4,30 +4,28 @@ const QUALITY_MULTIPLIERS = {
   rare: 5
 };
 
-const QUIVER_PRICE = 117;
-const STACK_SIZE = 100;
-const REFILL_RATE = 100;
 const FALLEN_TC_NAME = "CornucopiaFallenAct1";
+const QUIVER_CODES = ["aqv", "cqv"];
+const JAVELIN_CODES = [
+  "jav", "pil", "ssp", "glv", "tsp",
+  "9ja", "9pi", "9s9", "9gl", "9ts",
+  "7ja", "7pi", "7s7", "7gl", "7ts"
+];
+
+const STACK_SIZE = 100;
+const SELL_PRICE = 117;
+const REFILL_RATE = 100;
 
 const PATHS = {
   itemRatio: ["global/excel/itemratio.txt", "global/excel/ItemRatio.txt"],
+  treasureClassEx: ["global/excel/treasureclassex.txt", "global/excel/TreasureClassEx.txt"],
+  monStats: ["global/excel/monstats.txt", "global/excel/MonStats.txt"],
   misc: ["global/excel/misc.txt", "global/excel/Misc.txt"],
   weapons: ["global/excel/weapons.txt", "global/excel/Weapons.txt"],
   automagic: ["global/excel/automagic.txt", "global/excel/Automagic.txt"],
-  treasureClassEx: ["global/excel/treasureclassex.txt", "global/excel/TreasureClassEx.txt"],
-  monStats: ["global/excel/monstats.txt", "global/excel/MonStats.txt"],
-  inventory: ["global/excel/inventory.txt", "global/excel/Inventory.txt"]
+  inventory: ["global/excel/inventory.txt", "global/excel/Inventory.txt"],
+  charstats: ["global/excel/charstats.txt", "global/excel/CharStats.txt"]
 };
-
-const QUIVERS = [
-  { base: "aqv", code: "cqa", namestr: "mod_cornucopia_arrows" },
-  { base: "cqv", code: "cqb", namestr: "mod_cornucopia_bolts" }
-];
-
-const THROWN_VARIANTS = [
-  { base: "jav", code: "cjj", namestr: "mod_cornucopia_javelin" },
-  { base: "pil", code: "cjp", namestr: "mod_cornucopia_pilum" }
-];
 
 function asInt(value, fallback = 0) {
   const parsed = parseInt(value, 10);
@@ -46,51 +44,32 @@ function cloneRow(row) {
   return out;
 }
 
-function normalizeKeyName(name) {
+function normalizeKey(name) {
   return String(name || "")
     .toLowerCase()
-    .replace(/[\s_-]+/g, "");
+    .replace(/[^a-z0-9]/g, "");
 }
 
-function findColumnKey(row, logicalName) {
-  const target = normalizeKeyName(logicalName);
-  return Object.keys(row).find((k) => normalizeKeyName(k) === target);
+function findKey(row, logicalName) {
+  const target = normalizeKey(logicalName);
+  return Object.keys(row).find((k) => normalizeKey(k) === target);
 }
 
-function getValue(row, logicalName, fallback = "") {
-  const key = findColumnKey(row, logicalName);
-  return key ? row[key] : fallback;
+function getVal(row, logicalName, fallback = "") {
+  const k = findKey(row, logicalName);
+  return k ? row[k] : fallback;
 }
 
-function setValue(row, logicalName, value) {
-  const key = findColumnKey(row, logicalName);
-  if (key) {
-    row[key] = String(value);
+function setVal(row, logicalName, value) {
+  const k = findKey(row, logicalName);
+  if (k) {
+    row[k] = String(value);
     return true;
   }
   return false;
 }
 
-function readTsvFromCandidates(candidates, label) {
-  let lastErr;
-  for (let i = 0; i < candidates.length; i += 1) {
-    try {
-      const path = candidates[i];
-      const rows = D2RMM.readTsv(path);
-      return { path, rows };
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  D2RMM.error(`Failed to read ${label} from: ${candidates.join(", ")}`);
-  throw lastErr;
-}
-
-function writeTsvFile(file) {
-  D2RMM.writeTsv(file.path, file.rows);
-}
-
-function getIndexedColumns(row, prefix) {
+function collectIndexedCols(row, prefix) {
   const re = new RegExp(`^${prefix}(\\d+)$`, "i");
   return Object.keys(row)
     .map((k) => {
@@ -102,339 +81,263 @@ function getIndexedColumns(row, prefix) {
     .sort((a, b) => a.idx - b.idx);
 }
 
-function setVendorFlags(row, vendorName) {
-  const vendorLower = vendorName.toLowerCase();
-  Object.keys(row).forEach((key) => {
-    const lowered = key.toLowerCase();
-    if (!lowered.includes(vendorLower)) {
-      return;
+function readTable(pathCandidates, label) {
+  let lastErr;
+  for (let i = 0; i < pathCandidates.length; i += 1) {
+    try {
+      const path = pathCandidates[i];
+      const rows = D2RMM.readTsv(path);
+      return { path, rows };
+    } catch (err) {
+      lastErr = err;
     }
-    row[key] = "1";
-  });
+  }
+  throw new Error(`Unable to read ${label}. Tried: ${pathCandidates.join(", ")}; last error: ${lastErr}`);
+}
+
+function writeTable(table) {
+  D2RMM.writeTsv(table.path, table.rows);
 }
 
 function tuneItemQuality() {
-  const file = readTsvFromCandidates(PATHS.itemRatio, "ItemRatio");
-  file.rows.forEach((row) => {
-    const uniqueDiv = asInt(getValue(row, "UniqueDivisor", "1"), 1);
-    const setDiv = asInt(getValue(row, "SetDivisor", "1"), 1);
-    const rareDiv = asInt(getValue(row, "RareDivisor", "1"), 1);
+  const tbl = readTable(PATHS.itemRatio, "ItemRatio");
+  tbl.rows.forEach((row) => {
+    const uniqueDiv = asInt(getVal(row, "UniqueDivisor", "1"), 1);
+    const setDiv = asInt(getVal(row, "SetDivisor", "1"), 1);
+    const rareDiv = asInt(getVal(row, "RareDivisor", "1"), 1);
 
-    setValue(row, "UniqueDivisor", Math.max(1, Math.floor(uniqueDiv / QUALITY_MULTIPLIERS.unique)));
-    setValue(row, "SetDivisor", Math.max(1, Math.floor(setDiv / QUALITY_MULTIPLIERS.set)));
-    setValue(row, "RareDivisor", Math.max(1, Math.floor(rareDiv / QUALITY_MULTIPLIERS.rare)));
+    setVal(row, "UniqueDivisor", Math.max(1, Math.floor(uniqueDiv / QUALITY_MULTIPLIERS.unique)));
+    setVal(row, "SetDivisor", Math.max(1, Math.floor(setDiv / QUALITY_MULTIPLIERS.set)));
+    setVal(row, "RareDivisor", Math.max(1, Math.floor(rareDiv / QUALITY_MULTIPLIERS.rare)));
 
-    setValue(row, "MagicDivisor", "1000000000");
-    setValue(row, "MagicMin", "0");
-    setValue(row, "MagicMax", "0");
+    // Strong magic suppression. True "never magic" is not a single official switch.
+    setVal(row, "MagicDivisor", "1000000000");
+    setVal(row, "MagicMin", "0");
+    setVal(row, "MagicMax", "0");
   });
-  writeTsvFile(file);
+  writeTable(tbl);
 }
 
-function suppressMagicInTreasureClasses() {
-  const file = readTsvFromCandidates(PATHS.treasureClassEx, "TreasureClassEx");
-  file.rows.forEach((row) => {
-    setValue(row, "Magic", "0");
+function suppressMagicInTCs() {
+  const tbl = readTable(PATHS.treasureClassEx, "TreasureClassEx");
+  tbl.rows.forEach((row) => {
+    setVal(row, "Magic", "0");
   });
-  writeTsvFile(file);
+  writeTable(tbl);
 }
 
-function upsertQuivers() {
-  const file = readTsvFromCandidates(PATHS.misc, "misc");
-  const rows = file.rows;
+function patchVendorFlags(row, vendorName) {
+  const tag = vendorName.toLowerCase();
+  Object.keys(row).forEach((k) => {
+    const low = k.toLowerCase();
+    if (!low.includes(tag)) return;
+    row[k] = "1";
+  });
+}
 
-  QUIVERS.forEach((spec) => {
-    const base = rows.find((r) => String(getValue(r, "code", "")).toLowerCase() === spec.base);
-    if (!base) {
-      D2RMM.error(`Missing base quiver code '${spec.base}' in misc.txt`);
-      return;
-    }
+function patchQuiversInMisc() {
+  const tbl = readTable(PATHS.misc, "misc");
+  QUIVER_CODES.forEach((code) => {
+    const row = tbl.rows.find((r) => String(getVal(r, "code", "")).toLowerCase() === code);
+    if (!row) return;
 
-    let row = rows.find((r) => String(getValue(r, "code", "")).toLowerCase() === spec.code);
+    setVal(row, "spawnable", "1");
+    setVal(row, "PermStoreItem", "1");
+    setVal(row, "level", "1");
+    setVal(row, "levelreq", "1");
+    setVal(row, "cost", SELL_PRICE);
+    setVal(row, "gamble cost", SELL_PRICE);
+    setVal(row, "maxstack", STACK_SIZE);
+    setVal(row, "max stack", STACK_SIZE);
+    setVal(row, "minstack", STACK_SIZE);
+    setVal(row, "min stack", STACK_SIZE);
+    setVal(row, "spawnstack", STACK_SIZE);
+    setVal(row, "spawn stack", STACK_SIZE);
+    setVal(row, "auto prefix", "CornucopiaAmmoRefill");
+
+    patchVendorFlags(row, "akara");
+    patchVendorFlags(row, "charsi");
+  });
+  writeTable(tbl);
+}
+
+function patchJavelinsInWeapons() {
+  const tbl = readTable(PATHS.weapons, "weapons");
+  tbl.rows.forEach((row) => {
+    const code = String(getVal(row, "code", "")).toLowerCase();
+    if (!JAVELIN_CODES.includes(code)) return;
+
+    setVal(row, "spawnable", "1");
+    setVal(row, "PermStoreItem", "1");
+    setVal(row, "levelreq", "1");
+    setVal(row, "cost", SELL_PRICE);
+    setVal(row, "gamble cost", SELL_PRICE);
+    setVal(row, "maxstack", STACK_SIZE);
+    setVal(row, "max stack", STACK_SIZE);
+    setVal(row, "minstack", STACK_SIZE);
+    setVal(row, "min stack", STACK_SIZE);
+    setVal(row, "spawnstack", STACK_SIZE);
+    setVal(row, "spawn stack", STACK_SIZE);
+    setVal(row, "auto prefix", "CornucopiaJavelinRefill");
+
+    const oldFreq = asInt(getVal(row, "frequency", "1"), 1);
+    setVal(row, "frequency", clamp(oldFreq * 50, 1, 65535));
+
+    patchVendorFlags(row, "charsi");
+  });
+  writeTable(tbl);
+}
+
+function ensureAutomagicRows() {
+  const tbl = readTable(PATHS.automagic, "automagic");
+  const ensureRow = (name) => {
+    let row = tbl.rows.find((r) => String(getVal(r, "Name", "")).toLowerCase() === name.toLowerCase());
     if (!row) {
-      row = cloneRow(base);
-      setValue(row, "code", spec.code);
-      rows.push(row);
-    }
-
-    setValue(row, "namestr", spec.namestr);
-    setValue(row, "spawnable", "1");
-    setValue(row, "PermStoreItem", "1");
-    setValue(row, "level", "1");
-    setValue(row, "levelreq", "1");
-    setValue(row, "cost", QUIVER_PRICE);
-    setValue(row, "gamble cost", QUIVER_PRICE);
-    setValue(row, "maxstack", STACK_SIZE);
-    setValue(row, "max stack", STACK_SIZE);
-    setValue(row, "minstack", STACK_SIZE);
-    setValue(row, "min stack", STACK_SIZE);
-    setValue(row, "spawnstack", STACK_SIZE);
-    setValue(row, "spawn stack", STACK_SIZE);
-
-    setVendorFlags(row, "akara");
-    setVendorFlags(row, "charsi");
-  });
-
-  writeTsvFile(file);
-}
-
-function upsertThrownVariants() {
-  const file = readTsvFromCandidates(PATHS.weapons, "weapons");
-  const rows = file.rows;
-
-  THROWN_VARIANTS.forEach((spec) => {
-    const base = rows.find((r) => String(getValue(r, "code", "")).toLowerCase() === spec.base);
-    if (!base) {
-      D2RMM.error(`Missing base thrown code '${spec.base}' in weapons.txt`);
-      return;
-    }
-
-    let row = rows.find((r) => String(getValue(r, "code", "")).toLowerCase() === spec.code);
-    if (!row) {
-      row = cloneRow(base);
-      setValue(row, "code", spec.code);
-      rows.push(row);
-    }
-
-    setValue(row, "namestr", spec.namestr);
-    setValue(row, "spawnable", "1");
-    setValue(row, "PermStoreItem", "1");
-    setValue(row, "level", "1");
-    setValue(row, "levelreq", "1");
-    setValue(row, "cost", QUIVER_PRICE);
-    setValue(row, "gamble cost", QUIVER_PRICE);
-    setValue(row, "maxstack", STACK_SIZE);
-    setValue(row, "max stack", STACK_SIZE);
-    setValue(row, "minstack", STACK_SIZE);
-    setValue(row, "min stack", STACK_SIZE);
-    setValue(row, "spawnstack", STACK_SIZE);
-    setValue(row, "spawn stack", STACK_SIZE);
-
-    const baseFreq = asInt(getValue(base, "frequency", "1"), 1);
-    setValue(row, "frequency", Math.max(1, baseFreq * 50));
-
-    setVendorFlags(row, "charsi");
-  });
-
-  writeTsvFile(file);
-}
-
-function addRegenAffixes() {
-  const autoFile = readTsvFromCandidates(PATHS.automagic, "automagic");
-  const autoRows = autoFile.rows;
-
-  function ensureAutoRow(name) {
-    let row = autoRows.find((r) => String(getValue(r, "Name", "")).toLowerCase() === name.toLowerCase());
-    if (!row) {
-      row = cloneRow(autoRows[0] || {});
+      row = cloneRow(tbl.rows[0] || {});
       Object.keys(row).forEach((k) => {
         row[k] = "";
       });
-      setValue(row, "Name", name);
-      autoRows.push(row);
+      setVal(row, "Name", name);
+      tbl.rows.push(row);
     }
     return row;
-  }
+  };
 
-  const quiver = ensureAutoRow("CornucopiaQuiverRefill");
-  const thrown = ensureAutoRow("CornucopiaThrownRefill");
+  const ammo = ensureRow("CornucopiaAmmoRefill");
+  const jav = ensureRow("CornucopiaJavelinRefill");
 
-  [quiver, thrown].forEach((row) => {
-    setValue(row, "enabled", "1");
-    setValue(row, "spawnable", "1");
-    setValue(row, "frequency", "1");
-    setValue(row, "mod1code", "rep-qty");
-    setValue(row, "mod1min", REFILL_RATE);
-    setValue(row, "mod1max", REFILL_RATE);
+  [ammo, jav].forEach((row) => {
+    setVal(row, "enabled", "1");
+    setVal(row, "spawnable", "1");
+    setVal(row, "frequency", "1");
+    setVal(row, "mod1code", "rep-qty");
+    setVal(row, "mod1min", REFILL_RATE);
+    setVal(row, "mod1max", REFILL_RATE);
+    setVal(row, "itype1", "");
+    setVal(row, "itype2", "");
   });
 
-  setValue(quiver, "itype1", "aqv");
-  setValue(quiver, "itype2", "cqv");
-  setValue(thrown, "itype1", "");
-  setValue(thrown, "itype2", "");
-
-  writeTsvFile(autoFile);
-
-  const miscFile = readTsvFromCandidates(PATHS.misc, "misc");
-  miscFile.rows.forEach((row) => {
-    const code = String(getValue(row, "code", "")).toLowerCase();
-    if (code === "cqa" || code === "cqb") {
-      setValue(row, "auto prefix", "CornucopiaQuiverRefill");
-    }
-  });
-  writeTsvFile(miscFile);
-
-  const weapFile = readTsvFromCandidates(PATHS.weapons, "weapons");
-  weapFile.rows.forEach((row) => {
-    const code = String(getValue(row, "code", "")).toLowerCase();
-    if (code === "cjj" || code === "cjp") {
-      setValue(row, "auto prefix", "CornucopiaThrownRefill");
-    }
-  });
-  writeTsvFile(weapFile);
+  writeTable(tbl);
 }
 
-function setTreasureClassToItems(row, itemCodes) {
-  setValue(row, "Picks", String(itemCodes.length));
-  setValue(row, "NoDrop", "0");
-  setValue(row, "Unique", "0");
-  setValue(row, "Set", "0");
-  setValue(row, "Rare", "0");
-  setValue(row, "Magic", "0");
+function setTCItems(row, codes) {
+  setVal(row, "Picks", String(codes.length));
+  setVal(row, "NoDrop", "0");
+  setVal(row, "Unique", "0");
+  setVal(row, "Set", "0");
+  setVal(row, "Rare", "0");
+  setVal(row, "Magic", "0");
 
-  const items = getIndexedColumns(row, "Item");
-  items.forEach(({ key, idx }) => {
+  const itemCols = collectIndexedCols(row, "Item");
+  itemCols.forEach(({ key, idx }) => {
     row[key] = "";
-    const probKey = Object.keys(row).find((k) => normalizeKeyName(k) === normalizeKeyName(`Prob${idx}`));
-    if (probKey) {
-      row[probKey] = "0";
-    }
+    const probKey = Object.keys(row).find((k) => normalizeKey(k) === normalizeKey(`Prob${idx}`));
+    if (probKey) row[probKey] = "0";
   });
 
-  itemCodes.forEach((code, index) => {
-    const target = items[index];
-    if (!target) {
-      return;
-    }
+  codes.forEach((code, i) => {
+    const target = itemCols[i];
+    if (!target) return;
     row[target.key] = code;
-    const probKey = Object.keys(row).find((k) => normalizeKeyName(k) === normalizeKeyName(`Prob${target.idx}`));
-    if (probKey) {
-      row[probKey] = "1";
-    }
+    const probKey = Object.keys(row).find((k) => normalizeKey(k) === normalizeKey(`Prob${target.idx}`));
+    if (probKey) row[probKey] = "1";
   });
 }
 
-function ensureFallenTreasureClass() {
-  const tcFile = readTsvFromCandidates(PATHS.treasureClassEx, "TreasureClassEx");
-  const tcRows = tcFile.rows;
+function forceFallenDropsToQuivers() {
+  const tcTbl = readTable(PATHS.treasureClassEx, "TreasureClassEx");
+  const tcRows = tcTbl.rows;
 
-  const nameKey = Object.keys(tcRows[0] || {}).find((k) => normalizeKeyName(k) === normalizeKeyName("Treasure Class")) || "Treasure Class";
-  let custom = tcRows.find((row) => String(row[nameKey] || "").toLowerCase() === FALLEN_TC_NAME.toLowerCase());
+  const tcNameKey = Object.keys(tcRows[0] || {}).find((k) => normalizeKey(k) === normalizeKey("Treasure Class")) || "Treasure Class";
+  let custom = tcRows.find((r) => String(r[tcNameKey] || "").toLowerCase() === FALLEN_TC_NAME.toLowerCase());
   if (!custom) {
     custom = cloneRow(tcRows[0] || {});
     Object.keys(custom).forEach((k) => {
       custom[k] = "";
     });
-    custom[nameKey] = FALLEN_TC_NAME;
+    custom[tcNameKey] = FALLEN_TC_NAME;
     tcRows.push(custom);
   }
-  setTreasureClassToItems(custom, ["cqa", "cqb"]);
+  setTCItems(custom, QUIVER_CODES);
 
   tcRows.forEach((row) => {
-    const tcName = String(row[nameKey] || "").toLowerCase();
+    const name = String(row[tcNameKey] || "").toLowerCase();
     if (
-      tcName.includes("fallen") ||
-      tcName.includes("carver") ||
-      tcName.includes("devilkin") ||
-      tcName.includes("darkone") ||
-      tcName.includes("dark one")
+      name.includes("fallen") ||
+      name.includes("carver") ||
+      name.includes("devilkin") ||
+      name.includes("darkone") ||
+      name.includes("dark one")
     ) {
-      setTreasureClassToItems(row, ["cqa", "cqb"]);
+      setTCItems(row, QUIVER_CODES);
     }
   });
+  writeTable(tcTbl);
 
-  writeTsvFile(tcFile);
-}
-
-function bindFallenMonstersToCustomTC() {
-  const monFile = readTsvFromCandidates(PATHS.monStats, "MonStats");
-  monFile.rows.forEach((row) => {
-    const id = String(getValue(row, "Id", "")).toLowerCase();
+  const monTbl = readTable(PATHS.monStats, "MonStats");
+  monTbl.rows.forEach((row) => {
+    const id = String(getVal(row, "Id", "")).toLowerCase();
     const fallenFamily =
       id.includes("fallen") ||
       id.includes("carver") ||
       id.includes("devilkin") ||
       id.includes("darkone") ||
       id.includes("dark one");
-    if (!fallenFamily) {
-      return;
-    }
+    if (!fallenFamily) return;
+
     Object.keys(row).forEach((k) => {
-      if (normalizeKeyName(k).startsWith(normalizeKeyName("TreasureClass"))) {
+      if (normalizeKey(k).startsWith(normalizeKey("TreasureClass"))) {
         row[k] = FALLEN_TC_NAME;
       }
     });
   });
-  writeTsvFile(monFile);
+  writeTable(monTbl);
 }
 
-function boostThrownDropsInTCs() {
-  const tcFile = readTsvFromCandidates(PATHS.treasureClassEx, "TreasureClassEx");
-  const tcRows = tcFile.rows;
-  const variantMap = { jav: "cjj", pil: "cjp" };
-
-  tcRows.forEach((row) => {
-    const items = getIndexedColumns(row, "Item");
-    if (!items.length) {
-      return;
-    }
-
-    const empty = items.filter(({ key }) => String(row[key] || "").trim() === "");
-
-    items.forEach(({ key, idx }) => {
+function boostJavelinDropsInTCs() {
+  const tcTbl = readTable(PATHS.treasureClassEx, "TreasureClassEx");
+  tcTbl.rows.forEach((row) => {
+    const itemCols = collectIndexedCols(row, "Item");
+    itemCols.forEach(({ key, idx }) => {
       const code = String(row[key] || "").toLowerCase();
-      const variant = variantMap[code];
-      if (!variant) {
-        return;
-      }
-
-      const probKey = Object.keys(row).find((k) => normalizeKeyName(k) === normalizeKeyName(`Prob${idx}`));
-      const oldProb = probKey ? Math.max(1, asInt(row[probKey], 1)) : 1;
-      const newProb = clamp(oldProb * 50, 1, 65535);
-
-      if (empty.length > 0) {
-        const target = empty.shift();
-        row[target.key] = variant;
-        const targetProb = Object.keys(row).find((k) => normalizeKeyName(k) === normalizeKeyName(`Prob${target.idx}`));
-        if (targetProb) {
-          row[targetProb] = String(newProb);
-        }
-      } else {
-        row[key] = variant;
-        if (probKey) {
-          row[probKey] = String(newProb);
-        }
-      }
+      if (!JAVELIN_CODES.includes(code)) return;
+      const probKey = Object.keys(row).find((k) => normalizeKey(k) === normalizeKey(`Prob${idx}`));
+      if (!probKey) return;
+      const oldProb = asInt(row[probKey], 1);
+      row[probKey] = String(clamp(oldProb * 50, 1, 65535));
     });
   });
-
-  writeTsvFile(tcFile);
+  writeTable(tcTbl);
 }
 
-function injectVendorInventory() {
-  const invFile = readTsvFromCandidates(PATHS.inventory, "inventory");
-  invFile.rows.forEach((row) => {
+function patchVendorInventory() {
+  const tbl = readTable(PATHS.inventory, "inventory");
+  tbl.rows.forEach((row) => {
     const text = Object.values(row).join(" ").toLowerCase();
     const isAkara = text.includes("akara");
     const isCharsi = text.includes("charsi");
-    if (!isAkara && !isCharsi) {
-      return;
-    }
-
-    const itemCols = getIndexedColumns(row, "item");
-    if (!itemCols.length) {
-      return;
-    }
+    if (!isAkara && !isCharsi) return;
 
     const want = [];
     if (isAkara) {
-      want.push("cqa", "cqb");
+      want.push("aqv", "cqv");
     }
     if (isCharsi) {
-      want.push("cjj", "cjp", "cqa", "cqb");
+      want.push("jav", "pil", "aqv", "cqv");
     }
+
+    const itemCols = collectIndexedCols(row, "item");
+    if (!itemCols.length) return;
 
     const existing = new Set(itemCols.map(({ key }) => String(row[key] || "").toLowerCase()));
     const empty = itemCols.filter(({ key }) => String(row[key] || "").trim() === "");
-    const tail = [...itemCols].reverse();
+    const fallbackReplace = [...itemCols].reverse();
 
     want.forEach((code) => {
-      if (existing.has(code)) {
-        return;
-      }
+      if (existing.has(code)) return;
       let slot = empty.shift();
       if (!slot) {
-        slot = tail.shift();
+        slot = fallbackReplace.shift();
       }
       if (slot) {
         row[slot.key] = code;
@@ -442,33 +345,52 @@ function injectVendorInventory() {
       }
     });
   });
-  writeTsvFile(invFile);
+  writeTable(tbl);
 }
 
-function addLocalization() {
-  const jsonPaths = ["local/lng/strings/item-names.json", "local/lng/strings/item-name.json"];
-  jsonPaths.forEach((path) => {
-    try {
-      const json = D2RMM.readJson(path);
-      json.mod_cornucopia_arrows = "Cornucopia Arrows";
-      json.mod_cornucopia_bolts = "Cornucopia Bolts";
-      json.mod_cornucopia_javelin = "Cornucopia Javelin";
-      json.mod_cornucopia_pilum = "Cornucopia Pilum";
-      D2RMM.writeJson(path, json);
-    } catch (err) {
-      // Optional localization targets.
+function patchAmazonStarter() {
+  const tbl = readTable(PATHS.charstats, "charstats");
+  const amaRow = tbl.rows.find((row) => {
+    const c = String(getVal(row, "class", "") || getVal(row, "Class", "")).toLowerCase();
+    return c === "ama" || c === "amazon";
+  });
+  if (!amaRow) {
+    writeTable(tbl);
+    return;
+  }
+
+  const itemCols = collectIndexedCols(amaRow, "item");
+  let chosenIdx = null;
+
+  itemCols.forEach(({ key, idx }) => {
+    const val = String(amaRow[key] || "").toLowerCase();
+    if (chosenIdx === null && JAVELIN_CODES.includes(val)) {
+      chosenIdx = idx;
     }
   });
+
+  if (chosenIdx === null && itemCols.length > 0) {
+    chosenIdx = itemCols[0].idx;
+  }
+
+  if (chosenIdx !== null) {
+    const itemKey = Object.keys(amaRow).find((k) => normalizeKey(k) === normalizeKey(`item${chosenIdx}`));
+    if (itemKey) amaRow[itemKey] = "jav";
+
+    const countKey = Object.keys(amaRow).find((k) => normalizeKey(k) === normalizeKey(`item${chosenIdx}count`));
+    if (countKey) amaRow[countKey] = String(STACK_SIZE);
+  }
+
+  writeTable(tbl);
 }
 
 tuneItemQuality();
-suppressMagicInTreasureClasses();
-upsertQuivers();
-upsertThrownVariants();
-addRegenAffixes();
-ensureFallenTreasureClass();
-bindFallenMonstersToCustomTC();
-boostThrownDropsInTCs();
-injectVendorInventory();
-addLocalization();
+suppressMagicInTCs();
+patchQuiversInMisc();
+patchJavelinsInWeapons();
+ensureAutomagicRows();
+forceFallenDropsToQuivers();
+boostJavelinDropsInTCs();
+patchVendorInventory();
+patchAmazonStarter();
 

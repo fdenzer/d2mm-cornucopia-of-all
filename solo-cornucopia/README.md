@@ -11,13 +11,18 @@ This folder is a ready-to-drop D2RMM mod:
   - `Rare`: 5x
   - `Set`: 25x
   - `Unique`: 50x
-  - `Magic`: heavily suppressed via very large `MagicDivisor`
-- Adds two quiver base items in `misc.txt`:
-  - `cqa` (`Cornucopia Arrows`)
-  - `cqb` (`Cornucopia Bolts`)
-- Attempts to make Akara sell both quivers with fixed store price `117`.
-- Forces quiver stack-related fields to `100` where supported.
-- Adds a strong replenish-quantity automagic entry targeted at quivers.
+  - `Magic`: strongly suppressed
+- Alters existing vanilla quivers in `misc.txt`:
+  - `aqv` and `cqv` set to stack `100`
+  - price set to `117`
+  - refill automagic attached
+- Alters existing javelin-family entries in `weapons.txt`:
+  - stack and starter-friendly quantity behavior
+  - refill automagic attached
+  - boosted frequency/drop weighting
+- Forces Fallen-family drops to quivers by redirecting to a dedicated treasure class.
+- Patches Akara/Charsi inventory rows to include vanilla quivers/javelins.
+- Patches Amazon starting loadout in `charstats.txt` to use javelin with count `100`.
 
 ## Notes
 
