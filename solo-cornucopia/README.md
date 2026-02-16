@@ -11,7 +11,8 @@ This folder is a ready-to-drop D2RMM mod:
   - `Rare`: 5x
   - `Set`: 25x
   - `Unique`: 50x
-  - `Magic`: strongly suppressed
+  - `Magic`: aggressively suppressed
+- Adds global treasure-class quality bias toward rare/set/unique and away from magic.
 - Alters existing vanilla quivers in `misc.txt`:
   - `aqv` and `cqv` set to stack `100`
   - price set to `117`
@@ -26,7 +27,7 @@ This folder is a ready-to-drop D2RMM mod:
 
 ## Notes
 
-- The script is defensive against missing files/columns, but always test in offline single-player.
+- The script is defensive against missing files/columns and avoids hard abort on optional table issues.
 - Exact "100 per second" replenish timing is engine-limited; this mod approximates the strongest practical refill behavior through `rep-qty`.
 - Localization is attempted through common JSON targets if present in your merged data.
 - If another mod edits the same tables, load order determines final values.

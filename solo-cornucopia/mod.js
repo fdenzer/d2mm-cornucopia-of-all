@@ -1,10 +1,9 @@
-const QUALITY_MULTIPLIERS = {
+const MULTIPLIERS = {
   unique: 50,
   set: 25,
   rare: 5
 };
 
-const FALLEN_TC_NAME = "CornucopiaFallenAct1";
 const QUIVER_CODES = ["aqv", "cqv"];
 const JAVELIN_CODES = [
   "jav", "pil", "ssp", "glv", "tsp",
@@ -12,6 +11,7 @@ const JAVELIN_CODES = [
   "7ja", "7pi", "7s7", "7gl", "7ts"
 ];
 
+const FALLEN_TC_NAME = "CornucopiaFallenAct1";
 const STACK_SIZE = 100;
 const SELL_PRICE = 117;
 const REFILL_RATE = 100;
@@ -56,17 +56,15 @@ function findKey(row, logicalName) {
 }
 
 function getVal(row, logicalName, fallback = "") {
-  const k = findKey(row, logicalName);
-  return k ? row[k] : fallback;
+  const key = findKey(row, logicalName);
+  return key ? row[key] : fallback;
 }
 
 function setVal(row, logicalName, value) {
-  const k = findKey(row, logicalName);
-  if (k) {
-    row[k] = String(value);
-    return true;
-  }
-  return false;
+  const key = findKey(row, logicalName);
+  if (!key) return false;
+  row[key] = String(value);
+  return true;
 }
 
 function collectIndexedCols(row, prefix) {
@@ -81,52 +79,78 @@ function collectIndexedCols(row, prefix) {
     .sort((a, b) => a.idx - b.idx);
 }
 
-function readTable(pathCandidates, label) {
-  let lastErr;
-  for (let i = 0; i < pathCandidates.length; i += 1) {
+function readTable(paths) {
+  for (let i = 0; i < paths.length; i += 1) {
     try {
-      const path = pathCandidates[i];
-      const rows = D2RMM.readTsv(path);
-      return { path, rows };
+      return { path: paths[i], rows: D2RMM.readTsv(paths[i]) };
     } catch (err) {
-      lastErr = err;
+      // try next path
     }
   }
-  throw new Error(`Unable to read ${label}. Tried: ${pathCandidates.join(", ")}; last error: ${lastErr}`);
+  return null;
 }
 
 function writeTable(table) {
   D2RMM.writeTsv(table.path, table.rows);
 }
 
-function tuneItemQuality() {
-  const tbl = readTable(PATHS.itemRatio, "ItemRatio");
+function runStep(stepName, fn) {
+  try {
+    fn();
+  } catch (err) {
+    // Keep installation alive so other steps still apply.
+    // D2RMM doesn't expose a warning API consistently; fallback to no-op on step failures.
+  }
+}
+
+function scaleQualityChance(row, name, multiplier) {
+  const base = asInt(getVal(row, name, "0"), 0);
+  const div = asInt(getVal(row, `${name}Divisor`, "0"), 0);
+  const min = asInt(getVal(row, `${name}Min`, "0"), 0);
+
+  if (base > 0) setVal(row, name, Math.max(1, Math.floor(base / multiplier)));
+  if (div > 0) setVal(row, `${name}Divisor`, Math.max(1, Math.floor(div / multiplier)));
+  if (min > 0) setVal(row, `${name}Min`, Math.max(1, Math.floor(min / multiplier)));
+}
+
+function patchItemRatio() {
+  const tbl = readTable(PATHS.itemRatio);
+  if (!tbl) return;
+
   tbl.rows.forEach((row) => {
-    const uniqueDiv = asInt(getVal(row, "UniqueDivisor", "1"), 1);
-    const setDiv = asInt(getVal(row, "SetDivisor", "1"), 1);
-    const rareDiv = asInt(getVal(row, "RareDivisor", "1"), 1);
+    scaleQualityChance(row, "Unique", MULTIPLIERS.unique);
+    scaleQualityChance(row, "Set", MULTIPLIERS.set);
+    scaleQualityChance(row, "Rare", MULTIPLIERS.rare);
 
-    setVal(row, "UniqueDivisor", Math.max(1, Math.floor(uniqueDiv / QUALITY_MULTIPLIERS.unique)));
-    setVal(row, "SetDivisor", Math.max(1, Math.floor(setDiv / QUALITY_MULTIPLIERS.set)));
-    setVal(row, "RareDivisor", Math.max(1, Math.floor(rareDiv / QUALITY_MULTIPLIERS.rare)));
-
-    // Strong magic suppression. True "never magic" is not a single official switch.
+    // Extremely suppress magic quality.
+    setVal(row, "Magic", "1000000000");
     setVal(row, "MagicDivisor", "1000000000");
-    setVal(row, "MagicMin", "0");
-    setVal(row, "MagicMax", "0");
+    setVal(row, "MagicMin", "1000000000");
   });
+
   writeTable(tbl);
 }
 
-function suppressMagicInTCs() {
-  const tbl = readTable(PATHS.treasureClassEx, "TreasureClassEx");
+function patchTreasureClassQualityBias() {
+  const tbl = readTable(PATHS.treasureClassEx);
+  if (!tbl) return;
+
   tbl.rows.forEach((row) => {
-    setVal(row, "Magic", "0");
+    const u = asInt(getVal(row, "Unique", "0"), 0);
+    const s = asInt(getVal(row, "Set", "0"), 0);
+    const r = asInt(getVal(row, "Rare", "0"), 0);
+    const m = asInt(getVal(row, "Magic", "0"), 0);
+
+    setVal(row, "Unique", Math.max(u, 4096));
+    setVal(row, "Set", Math.max(s, 3072));
+    setVal(row, "Rare", Math.max(r, 2048));
+    setVal(row, "Magic", Math.min(m, -1024));
   });
+
   writeTable(tbl);
 }
 
-function patchVendorFlags(row, vendorName) {
+function setVendorFlags(row, vendorName) {
   const tag = vendorName.toLowerCase();
   Object.keys(row).forEach((k) => {
     const low = k.toLowerCase();
@@ -135,11 +159,13 @@ function patchVendorFlags(row, vendorName) {
   });
 }
 
-function patchQuiversInMisc() {
-  const tbl = readTable(PATHS.misc, "misc");
-  QUIVER_CODES.forEach((code) => {
-    const row = tbl.rows.find((r) => String(getVal(r, "code", "")).toLowerCase() === code);
-    if (!row) return;
+function patchVanillaQuivers() {
+  const tbl = readTable(PATHS.misc);
+  if (!tbl) return;
+
+  tbl.rows.forEach((row) => {
+    const code = String(getVal(row, "code", "")).toLowerCase();
+    if (!QUIVER_CODES.includes(code)) return;
 
     setVal(row, "spawnable", "1");
     setVal(row, "PermStoreItem", "1");
@@ -155,14 +181,17 @@ function patchQuiversInMisc() {
     setVal(row, "spawn stack", STACK_SIZE);
     setVal(row, "auto prefix", "CornucopiaAmmoRefill");
 
-    patchVendorFlags(row, "akara");
-    patchVendorFlags(row, "charsi");
+    setVendorFlags(row, "akara");
+    setVendorFlags(row, "charsi");
   });
+
   writeTable(tbl);
 }
 
-function patchJavelinsInWeapons() {
-  const tbl = readTable(PATHS.weapons, "weapons");
+function patchVanillaJavelins() {
+  const tbl = readTable(PATHS.weapons);
+  if (!tbl) return;
+
   tbl.rows.forEach((row) => {
     const code = String(getVal(row, "code", "")).toLowerCase();
     if (!JAVELIN_CODES.includes(code)) return;
@@ -183,17 +212,20 @@ function patchJavelinsInWeapons() {
     const oldFreq = asInt(getVal(row, "frequency", "1"), 1);
     setVal(row, "frequency", clamp(oldFreq * 50, 1, 65535));
 
-    patchVendorFlags(row, "charsi");
+    setVendorFlags(row, "charsi");
   });
+
   writeTable(tbl);
 }
 
 function ensureAutomagicRows() {
-  const tbl = readTable(PATHS.automagic, "automagic");
-  const ensureRow = (name) => {
+  const tbl = readTable(PATHS.automagic);
+  if (!tbl || !tbl.rows.length) return;
+
+  function ensure(name) {
     let row = tbl.rows.find((r) => String(getVal(r, "Name", "")).toLowerCase() === name.toLowerCase());
     if (!row) {
-      row = cloneRow(tbl.rows[0] || {});
+      row = cloneRow(tbl.rows[0]);
       Object.keys(row).forEach((k) => {
         row[k] = "";
       });
@@ -201,10 +233,10 @@ function ensureAutomagicRows() {
       tbl.rows.push(row);
     }
     return row;
-  };
+  }
 
-  const ammo = ensureRow("CornucopiaAmmoRefill");
-  const jav = ensureRow("CornucopiaJavelinRefill");
+  const ammo = ensure("CornucopiaAmmoRefill");
+  const jav = ensure("CornucopiaJavelinRefill");
 
   [ammo, jav].forEach((row) => {
     setVal(row, "enabled", "1");
@@ -213,9 +245,12 @@ function ensureAutomagicRows() {
     setVal(row, "mod1code", "rep-qty");
     setVal(row, "mod1min", REFILL_RATE);
     setVal(row, "mod1max", REFILL_RATE);
-    setVal(row, "itype1", "");
-    setVal(row, "itype2", "");
   });
+
+  setVal(ammo, "itype1", "aqv");
+  setVal(ammo, "itype2", "cqv");
+  setVal(jav, "itype1", "");
+  setVal(jav, "itype2", "");
 
   writeTable(tbl);
 }
@@ -236,31 +271,31 @@ function setTCItems(row, codes) {
   });
 
   codes.forEach((code, i) => {
-    const target = itemCols[i];
-    if (!target) return;
-    row[target.key] = code;
-    const probKey = Object.keys(row).find((k) => normalizeKey(k) === normalizeKey(`Prob${target.idx}`));
+    const slot = itemCols[i];
+    if (!slot) return;
+    row[slot.key] = code;
+    const probKey = Object.keys(row).find((k) => normalizeKey(k) === normalizeKey(`Prob${slot.idx}`));
     if (probKey) row[probKey] = "1";
   });
 }
 
-function forceFallenDropsToQuivers() {
-  const tcTbl = readTable(PATHS.treasureClassEx, "TreasureClassEx");
-  const tcRows = tcTbl.rows;
+function forceFallenDrops() {
+  const tcTbl = readTable(PATHS.treasureClassEx);
+  if (!tcTbl || !tcTbl.rows.length) return;
 
-  const tcNameKey = Object.keys(tcRows[0] || {}).find((k) => normalizeKey(k) === normalizeKey("Treasure Class")) || "Treasure Class";
-  let custom = tcRows.find((r) => String(r[tcNameKey] || "").toLowerCase() === FALLEN_TC_NAME.toLowerCase());
+  const tcNameKey = Object.keys(tcTbl.rows[0]).find((k) => normalizeKey(k) === normalizeKey("Treasure Class")) || "Treasure Class";
+  let custom = tcTbl.rows.find((row) => String(row[tcNameKey] || "").toLowerCase() === FALLEN_TC_NAME.toLowerCase());
   if (!custom) {
-    custom = cloneRow(tcRows[0] || {});
+    custom = cloneRow(tcTbl.rows[0]);
     Object.keys(custom).forEach((k) => {
       custom[k] = "";
     });
     custom[tcNameKey] = FALLEN_TC_NAME;
-    tcRows.push(custom);
+    tcTbl.rows.push(custom);
   }
   setTCItems(custom, QUIVER_CODES);
 
-  tcRows.forEach((row) => {
+  tcTbl.rows.forEach((row) => {
     const name = String(row[tcNameKey] || "").toLowerCase();
     if (
       name.includes("fallen") ||
@@ -274,7 +309,8 @@ function forceFallenDropsToQuivers() {
   });
   writeTable(tcTbl);
 
-  const monTbl = readTable(PATHS.monStats, "MonStats");
+  const monTbl = readTable(PATHS.monStats);
+  if (!monTbl) return;
   monTbl.rows.forEach((row) => {
     const id = String(getVal(row, "Id", "")).toLowerCase();
     const fallenFamily =
@@ -294,8 +330,9 @@ function forceFallenDropsToQuivers() {
   writeTable(monTbl);
 }
 
-function boostJavelinDropsInTCs() {
-  const tcTbl = readTable(PATHS.treasureClassEx, "TreasureClassEx");
+function boostJavelinsInTCs() {
+  const tcTbl = readTable(PATHS.treasureClassEx);
+  if (!tcTbl) return;
   tcTbl.rows.forEach((row) => {
     const itemCols = collectIndexedCols(row, "Item");
     itemCols.forEach(({ key, idx }) => {
@@ -311,86 +348,69 @@ function boostJavelinDropsInTCs() {
 }
 
 function patchVendorInventory() {
-  const tbl = readTable(PATHS.inventory, "inventory");
+  const tbl = readTable(PATHS.inventory);
+  if (!tbl) return;
+
   tbl.rows.forEach((row) => {
     const text = Object.values(row).join(" ").toLowerCase();
     const isAkara = text.includes("akara");
     const isCharsi = text.includes("charsi");
     if (!isAkara && !isCharsi) return;
 
-    const want = [];
-    if (isAkara) {
-      want.push("aqv", "cqv");
-    }
-    if (isCharsi) {
-      want.push("jav", "pil", "aqv", "cqv");
-    }
+    const wanted = [];
+    if (isAkara) wanted.push("aqv", "cqv");
+    if (isCharsi) wanted.push("jav", "pil", "aqv", "cqv");
 
     const itemCols = collectIndexedCols(row, "item");
     if (!itemCols.length) return;
 
     const existing = new Set(itemCols.map(({ key }) => String(row[key] || "").toLowerCase()));
     const empty = itemCols.filter(({ key }) => String(row[key] || "").trim() === "");
-    const fallbackReplace = [...itemCols].reverse();
+    const fallback = [...itemCols].reverse();
 
-    want.forEach((code) => {
+    wanted.forEach((code) => {
       if (existing.has(code)) return;
       let slot = empty.shift();
-      if (!slot) {
-        slot = fallbackReplace.shift();
-      }
-      if (slot) {
-        row[slot.key] = code;
-        existing.add(code);
-      }
+      if (!slot) slot = fallback.shift();
+      if (!slot) return;
+      row[slot.key] = code;
+      existing.add(code);
     });
   });
+
   writeTable(tbl);
 }
 
 function patchAmazonStarter() {
-  const tbl = readTable(PATHS.charstats, "charstats");
-  const amaRow = tbl.rows.find((row) => {
-    const c = String(getVal(row, "class", "") || getVal(row, "Class", "")).toLowerCase();
-    return c === "ama" || c === "amazon";
+  const tbl = readTable(PATHS.charstats);
+  if (!tbl) return;
+
+  const ama = tbl.rows.find((row) => {
+    const cls = String(getVal(row, "class", "")).toLowerCase();
+    return cls === "ama" || cls === "amazon";
   });
-  if (!amaRow) {
-    writeTable(tbl);
-    return;
-  }
+  if (!ama) return;
 
-  const itemCols = collectIndexedCols(amaRow, "item");
-  let chosenIdx = null;
+  const itemCols = collectIndexedCols(ama, "item");
+  if (!itemCols.length) return;
 
-  itemCols.forEach(({ key, idx }) => {
-    const val = String(amaRow[key] || "").toLowerCase();
-    if (chosenIdx === null && JAVELIN_CODES.includes(val)) {
-      chosenIdx = idx;
-    }
-  });
+  let slot = itemCols.find(({ key }) => JAVELIN_CODES.includes(String(ama[key] || "").toLowerCase()));
+  if (!slot) slot = itemCols[0];
+  ama[slot.key] = "jav";
 
-  if (chosenIdx === null && itemCols.length > 0) {
-    chosenIdx = itemCols[0].idx;
-  }
-
-  if (chosenIdx !== null) {
-    const itemKey = Object.keys(amaRow).find((k) => normalizeKey(k) === normalizeKey(`item${chosenIdx}`));
-    if (itemKey) amaRow[itemKey] = "jav";
-
-    const countKey = Object.keys(amaRow).find((k) => normalizeKey(k) === normalizeKey(`item${chosenIdx}count`));
-    if (countKey) amaRow[countKey] = String(STACK_SIZE);
-  }
+  const countKey = Object.keys(ama).find((k) => normalizeKey(k) === normalizeKey(`${slot.key}count`));
+  if (countKey) ama[countKey] = String(STACK_SIZE);
 
   writeTable(tbl);
 }
 
-tuneItemQuality();
-suppressMagicInTCs();
-patchQuiversInMisc();
-patchJavelinsInWeapons();
-ensureAutomagicRows();
-forceFallenDropsToQuivers();
-boostJavelinDropsInTCs();
-patchVendorInventory();
-patchAmazonStarter();
+runStep("item ratio", patchItemRatio);
+runStep("tc quality bias", patchTreasureClassQualityBias);
+runStep("quivers", patchVanillaQuivers);
+runStep("javelins", patchVanillaJavelins);
+runStep("automagic", ensureAutomagicRows);
+runStep("fallen drops", forceFallenDrops);
+runStep("javelin tcs", boostJavelinsInTCs);
+runStep("vendor inventory", patchVendorInventory);
+runStep("amazon starter", patchAmazonStarter);
 
