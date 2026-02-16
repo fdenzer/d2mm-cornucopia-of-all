@@ -70,6 +70,9 @@ function upsertCornucopiaQuivers() {
 
     row.namestr = nameStr;
     row.spawnable = "1";
+    if (row.PermStoreItem !== undefined) {
+      row.PermStoreItem = "1";
+    }
     row.level = "1";
     row.levelreq = "1";
     row.cost = String(QUIVER_PRICE);
@@ -102,6 +105,42 @@ function upsertCornucopiaQuivers() {
   applyQuiverRow(baseArrow, "cqa", "mod_cornucopia_arrows");
   applyQuiverRow(baseBolt, "cqb", "mod_cornucopia_bolts");
   D2RMM.writeTsv("global/excel/misc.txt", misc);
+}
+
+function injectAkaraInventoryEntries() {
+  let inventory;
+  try {
+    inventory = D2RMM.readTsv("global/excel/inventory.txt");
+  } catch (err) {
+    return;
+  }
+
+  inventory.forEach((row) => {
+    const rowText = Object.values(row).join(" ").toLowerCase();
+    if (!rowText.includes("akara")) {
+      return;
+    }
+
+    const itemCols = Object.keys(row)
+      .filter((k) => /^item\d+$/i.test(k))
+      .sort((a, b) => asInt(a.replace(/\D/g, ""), 0) - asInt(b.replace(/\D/g, ""), 0));
+    if (itemCols.length === 0) {
+      return;
+    }
+
+    const hasArrow = itemCols.some((c) => String(row[c] || "").toLowerCase() === "cqa");
+    const hasBolt = itemCols.some((c) => String(row[c] || "").toLowerCase() === "cqb");
+
+    const empty = itemCols.filter((c) => String(row[c] || "").trim() === "");
+    if (!hasArrow && empty.length > 0) {
+      row[empty.shift()] = "cqa";
+    }
+    if (!hasBolt && empty.length > 0) {
+      row[empty.shift()] = "cqb";
+    }
+  });
+
+  D2RMM.writeTsv("global/excel/inventory.txt", inventory);
 }
 
 function addRefillAffixToQuivers() {
@@ -165,5 +204,6 @@ function addLocalizationStubs() {
 
 tuneQualityRolls();
 upsertCornucopiaQuivers();
+injectAkaraInventoryEntries();
 addRefillAffixToQuivers();
 addLocalizationStubs();
