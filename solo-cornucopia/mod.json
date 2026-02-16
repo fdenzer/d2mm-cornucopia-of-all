@@ -1,0 +1,75 @@
+{
+  "name": "Solo Cornucopia",
+  "description": "Solo-focused loot consistency with optional Cornucopia quivers.",
+  "author": "fdenzer",
+  "version": "0.1.0",
+  "config": [
+    {
+      "id": "dropIntensity",
+      "name": "Drop Intensity",
+      "description": "How strongly to reduce no-drop and improve quality odds.",
+      "type": "select",
+      "defaultValue": "medium",
+      "options": [
+        {
+          "id": "light",
+          "name": "Light"
+        },
+        {
+          "id": "medium",
+          "name": "Medium"
+        },
+        {
+          "id": "high",
+          "name": "High"
+        }
+      ]
+    },
+    {
+      "id": "enableCornucopiaQuivers",
+      "name": "Enable Cornucopia Quivers",
+      "description": "Adds Cornucopia Arrows/Bolts as new quiver base items.",
+      "type": "checkbox",
+      "defaultValue": true
+    },
+    {
+      "id": "cornucopiaStyle",
+      "name": "Cornucopia Style",
+      "description": "Large Stack = higher stack cap. Replenishing-like = smaller cap tuned for quality-of-life.",
+      "type": "select",
+      "defaultValue": "large_stack",
+      "options": [
+        {
+          "id": "large_stack",
+          "name": "Very Large Stack"
+        },
+        {
+          "id": "replenishing_like",
+          "name": "Replenishing-Like"
+        }
+      ]
+    },
+    {
+      "id": "quiverSource",
+      "name": "Quiver Source",
+      "description": "Where Cornucopia quivers are injected in treasure classes.",
+      "type": "select",
+      "defaultValue": "boss_only",
+      "options": [
+        {
+          "id": "boss_only",
+          "name": "Boss-Only"
+        },
+        {
+          "id": "boss_plus_targeted",
+          "name": "Boss + Targeted"
+        },
+        {
+          "id": "global_rare",
+          "name": "Global Rare"
+        }
+      ]
+    }
+  ]
+}
+
