@@ -107,7 +107,7 @@ function upsertCornucopiaQuivers() {
   D2RMM.writeTsv("global/excel/misc.txt", misc);
 }
 
-function injectAkaraInventoryEntries() {
+function injectVendorInventoryEntries() {
   let inventory;
   try {
     inventory = D2RMM.readTsv("global/excel/inventory.txt");
@@ -115,9 +115,10 @@ function injectAkaraInventoryEntries() {
     return;
   }
 
+  const vendorKeys = ["akara", "charsi"];
   inventory.forEach((row) => {
     const rowText = Object.values(row).join(" ").toLowerCase();
-    if (!rowText.includes("akara")) {
+    if (!vendorKeys.some((vendor) => rowText.includes(vendor))) {
       return;
     }
 
@@ -204,6 +205,6 @@ function addLocalizationStubs() {
 
 tuneQualityRolls();
 upsertCornucopiaQuivers();
-injectAkaraInventoryEntries();
+injectVendorInventoryEntries();
 addRefillAffixToQuivers();
 addLocalizationStubs();
