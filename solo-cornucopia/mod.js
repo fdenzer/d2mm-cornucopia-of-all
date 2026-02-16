@@ -7,6 +7,7 @@ const QUALITY_MULTIPLIERS = {
 const QUIVER_PRICE = 117;
 const QUIVER_STACK = 100;
 const QUIVER_REFILL_RATE = 100;
+const FALLEN_ACT1_TCS = "CornucopiaFallenAct1";
 
 function asInt(value, fallback = 0) {
   const parsed = parseInt(value, 10);
@@ -203,8 +204,85 @@ function addLocalizationStubs() {
   });
 }
 
+function ensureTreasureClassSchemaRow(sampleRow, name) {
+  const row = {};
+  Object.keys(sampleRow).forEach((k) => {
+    row[k] = "";
+  });
+  if (row["Treasure Class"] !== undefined) {
+    row["Treasure Class"] = name;
+  } else if (row.treasureclass !== undefined) {
+    row.treasureclass = name;
+  } else {
+    row["Treasure Class"] = name;
+  }
+  if (row.group !== undefined) row.group = "0";
+  if (row.level !== undefined) row.level = "1";
+  if (row.Picks !== undefined) row.Picks = "2";
+  if (row.NoDrop !== undefined) row.NoDrop = "0";
+  if (row.Unique !== undefined) row.Unique = "0";
+  if (row.Set !== undefined) row.Set = "0";
+  if (row.Rare !== undefined) row.Rare = "0";
+  if (row.Magic !== undefined) row.Magic = "0";
+
+  if (row.Item1 !== undefined) row.Item1 = "cqa";
+  if (row.Prob1 !== undefined) row.Prob1 = "1";
+  if (row.Item2 !== undefined) row.Item2 = "cqb";
+  if (row.Prob2 !== undefined) row.Prob2 = "1";
+  return row;
+}
+
+function forceFallenAct1QuiverDrops() {
+  let treasureClasses;
+  let monStats;
+  try {
+    treasureClasses = D2RMM.readTsv("global/excel/TreasureClassEx.txt");
+    monStats = D2RMM.readTsv("global/excel/MonStats.txt");
+  } catch (err) {
+    return;
+  }
+  if (!treasureClasses.length || !monStats.length) {
+    return;
+  }
+
+  let tcRow = treasureClasses.find((r) => {
+    const tcName = String(r["Treasure Class"] || r.treasureclass || "").toLowerCase();
+    return tcName === FALLEN_ACT1_TCS.toLowerCase();
+  });
+  if (!tcRow) {
+    tcRow = ensureTreasureClassSchemaRow(treasureClasses[0], FALLEN_ACT1_TCS);
+    treasureClasses.push(tcRow);
+  } else {
+    if (tcRow.Picks !== undefined) tcRow.Picks = "2";
+    if (tcRow.NoDrop !== undefined) tcRow.NoDrop = "0";
+    if (tcRow.Item1 !== undefined) tcRow.Item1 = "cqa";
+    if (tcRow.Prob1 !== undefined) tcRow.Prob1 = "1";
+    if (tcRow.Item2 !== undefined) tcRow.Item2 = "cqb";
+    if (tcRow.Prob2 !== undefined) tcRow.Prob2 = "1";
+  }
+  D2RMM.writeTsv("global/excel/TreasureClassEx.txt", treasureClasses);
+
+  monStats.forEach((row) => {
+    const id = String(row.Id || row.id || "").toLowerCase();
+    const isAct1FallenFamily =
+      (id.includes("fallen") || id.includes("carver") || id.includes("devilkin") || id.includes("darkone")) &&
+      !id.includes("warped") &&
+      !id.includes("reanimated");
+    if (!isAct1FallenFamily) {
+      return;
+    }
+    Object.keys(row).forEach((key) => {
+      if (key.toLowerCase().startsWith("treasureclass")) {
+        row[key] = FALLEN_ACT1_TCS;
+      }
+    });
+  });
+  D2RMM.writeTsv("global/excel/MonStats.txt", monStats);
+}
+
 tuneQualityRolls();
 upsertCornucopiaQuivers();
 injectVendorInventoryEntries();
 addRefillAffixToQuivers();
+forceFallenAct1QuiverDrops();
 addLocalizationStubs();
