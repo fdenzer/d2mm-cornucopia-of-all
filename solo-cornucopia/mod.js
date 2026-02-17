@@ -24,7 +24,8 @@ const PATHS = {
   weapons: ["global/excel/weapons.txt", "global/excel/Weapons.txt"],
   automagic: ["global/excel/automagic.txt", "global/excel/Automagic.txt"],
   inventory: ["global/excel/inventory.txt", "global/excel/Inventory.txt"],
-  charstats: ["global/excel/charstats.txt", "global/excel/CharStats.txt"]
+  charstats: ["global/excel/charstats.txt", "global/excel/CharStats.txt"],
+  npcMenu: ["global/excel/npcmenu.txt", "global/excel/NpcMenu.txt"]
 };
 
 function asInt(value, fallback = 0) {
@@ -404,6 +405,38 @@ function patchAmazonStarter() {
   writeTable(tbl);
 }
 
+function ensureMenuEntry(row, optionName) {
+  const menus = collectIndexedCols(row, "menu");
+  if (!menus.length) return false;
+
+  const wanted = optionName.toLowerCase();
+  const hasAlready = menus.some(({ key }) => String(row[key] || "").toLowerCase() === wanted);
+  if (hasAlready) return false;
+
+  let slot = menus.find(({ key }) => {
+    const val = String(row[key] || "").trim().toLowerCase();
+    return val === "" || val === "nul";
+  });
+  if (!slot) slot = menus[menus.length - 1];
+  if (!slot) return false;
+
+  row[slot.key] = optionName;
+  return true;
+}
+
+function patchCainCowPortal() {
+  const tbl = readTable(PATHS.npcMenu);
+  if (!tbl) return;
+
+  tbl.rows.forEach((row) => {
+    const npc = String(getVal(row, "npc", "")).toLowerCase();
+    if (!npc.startsWith("cain")) return;
+    ensureMenuEntry(row, "MagicPortal");
+  });
+
+  writeTable(tbl);
+}
+
 runStep("item ratio", patchItemRatio);
 runStep("tc quality bias", patchTreasureClassQualityBias);
 runStep("quivers", patchVanillaQuivers);
@@ -413,4 +446,4 @@ runStep("fallen drops", forceFallenDrops);
 runStep("javelin tcs", boostJavelinsInTCs);
 runStep("vendor inventory", patchVendorInventory);
 runStep("amazon starter", patchAmazonStarter);
-
+runStep("cain cow portal", patchCainCowPortal);

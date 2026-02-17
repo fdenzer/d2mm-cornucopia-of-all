@@ -24,6 +24,7 @@ This folder is a ready-to-drop D2RMM mod:
 - Forces Fallen-family drops to quivers by redirecting to a dedicated treasure class.
 - Patches Akara/Charsi inventory rows to include vanilla quivers/javelins.
 - Patches Amazon starting loadout in `charstats.txt` to use javelin with count `100`.
+- Adds a permanent no-Wirt's-Leg path to the Cow Level by adding Cain dialogue access to spawn the portal.
 
 ## Notes
 
