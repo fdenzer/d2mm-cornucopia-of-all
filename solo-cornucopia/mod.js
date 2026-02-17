@@ -25,7 +25,8 @@ const PATHS = {
   automagic: ["global/excel/automagic.txt", "global/excel/Automagic.txt"],
   inventory: ["global/excel/inventory.txt", "global/excel/Inventory.txt"],
   charstats: ["global/excel/charstats.txt", "global/excel/CharStats.txt"],
-  cubeMain: ["global/excel/cubemain.txt", "global/excel/CubeMain.txt"]
+  cubeMain: ["global/excel/cubemain.txt", "global/excel/CubeMain.txt"],
+  skills: ["global/excel/skills.txt", "global/excel/Skills.txt"]
 };
 
 function asInt(value, fallback = 0) {
@@ -435,6 +436,23 @@ function patchCowPortalNoLeg() {
   writeTable(tbl);
 }
 
+function patchHolyShieldDuration() {
+  const tbl = readTable(PATHS.skills);
+  if (!tbl) return;
+
+  tbl.rows.forEach((row) => {
+    const skill = String(getVal(row, "skill", "")).toLowerCase();
+    const cls = String(getVal(row, "charclass", "")).toLowerCase();
+    if (skill !== "holy shield" || cls !== "pal") return;
+
+    // 30 hours at 25 frames/second -> 2,700,000 frames
+    setVal(row, "Param1", "2700000");
+    setVal(row, "Param2", "0");
+  });
+
+  writeTable(tbl);
+}
+
 runStep("item ratio", patchItemRatio);
 runStep("tc quality bias", patchTreasureClassQualityBias);
 runStep("quivers", patchVanillaQuivers);
@@ -445,3 +463,4 @@ runStep("javelin tcs", boostJavelinsInTCs);
 runStep("vendor inventory", patchVendorInventory);
 runStep("amazon starter", patchAmazonStarter);
 runStep("cow portal no leg", patchCowPortalNoLeg);
+runStep("holy shield duration", patchHolyShieldDuration);
