@@ -26,7 +26,8 @@ const PATHS = {
   inventory: ["global/excel/inventory.txt", "global/excel/Inventory.txt"],
   charstats: ["global/excel/charstats.txt", "global/excel/CharStats.txt"],
   cubeMain: ["global/excel/cubemain.txt", "global/excel/CubeMain.txt"],
-  skills: ["global/excel/skills.txt", "global/excel/Skills.txt"]
+  skills: ["global/excel/skills.txt", "global/excel/Skills.txt"],
+  npcMenu: ["global/excel/npcmenu.txt", "global/excel/NpcMenu.txt"]
 };
 
 function asInt(value, fallback = 0) {
@@ -445,6 +446,42 @@ function patchCowPortalNoLeg() {
   writeTable(tbl);
 }
 
+function patchCainCowPortal() {
+  const tbl = readTable(PATHS.npcMenu);
+  if (!tbl || !tbl.rows.length) {
+    throw new Error("NpcMenu table missing or empty");
+  }
+
+  const probe = tbl.rows[0];
+  const menuCols = collectIndexedCols(probe, "menu");
+  if (!menuCols.length) {
+    throw new Error("NpcMenu has no menu* columns");
+  }
+
+  let cainRows = 0;
+  tbl.rows.forEach((row) => {
+    const npc = String(getVal(row, "npc", "")).toLowerCase();
+    if (!npc.startsWith("cain")) return;
+    cainRows += 1;
+
+    const existing = menuCols.map(({ key }) => String(row[key] || "").toLowerCase());
+    if (existing.includes("magicportal")) return;
+
+    let slot = menuCols.find(({ key }) => {
+      const v = String(row[key] || "").trim().toLowerCase();
+      return v === "" || v === "nul";
+    });
+    if (!slot) slot = menuCols[menuCols.length - 1];
+    row[slot.key] = "MagicPortal";
+  });
+
+  if (!cainRows) {
+    throw new Error("No Cain rows found in NpcMenu (expected npc=cain*)");
+  }
+
+  writeTable(tbl);
+}
+
 function patchHolyShieldDuration() {
   const tbl = readTable(PATHS.skills);
   if (!tbl) return;
@@ -472,4 +509,5 @@ runStep("javelin tcs", boostJavelinsInTCs);
 runStep("vendor inventory", patchVendorInventory);
 runStep("amazon starter", patchAmazonStarter);
 runStep("cow portal no leg", patchCowPortalNoLeg);
+runStep("cain cow portal", patchCainCowPortal);
 runStep("holy shield duration", patchHolyShieldDuration);
