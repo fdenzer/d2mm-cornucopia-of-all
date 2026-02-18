@@ -82,26 +82,35 @@ function collectIndexedCols(row, prefix) {
 }
 
 function readTable(paths) {
+  let lastErr = null;
   for (let i = 0; i < paths.length; i += 1) {
     try {
-      return { path: paths[i], rows: D2RMM.readTsv(paths[i]) };
+      const data = D2RMM.readTsv(paths[i]);
+      if (!data || !Array.isArray(data.rows)) {
+        throw new Error(`Unexpected TSV shape for ${paths[i]}`);
+      }
+      return { path: paths[i], data, rows: data.rows };
     } catch (err) {
-      // try next path
+      lastErr = err;
     }
   }
-  return null;
+  const hint = Array.isArray(paths) ? paths.join(", ") : String(paths || "");
+  throw new Error(`Unable to read required table (${hint}). ${lastErr ? String(lastErr) : ""}`);
 }
 
 function writeTable(table) {
-  D2RMM.writeTsv(table.path, table.rows);
+  if (!table || !table.data || !Array.isArray(table.rows)) {
+    throw new Error(`Invalid table object passed to writeTable for ${table && table.path ? table.path : "unknown"}`);
+  }
+  table.data.rows = table.rows;
+  D2RMM.writeTsv(table.path, table.data);
 }
 
 function runStep(stepName, fn) {
   try {
     fn();
   } catch (err) {
-    // Keep installation alive so other steps still apply.
-    // D2RMM doesn't expose a warning API consistently; fallback to no-op on step failures.
+    throw new Error(`[${stepName}] ${err && err.message ? err.message : String(err)}`);
   }
 }
 
