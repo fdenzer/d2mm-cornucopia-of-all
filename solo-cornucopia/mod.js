@@ -457,26 +457,71 @@ function patchCainCowPortal() {
   if (!menuCols.length) {
     throw new Error("NpcMenu has no menu* columns");
   }
+  const questCols = Object.keys(probe).filter((k) => normalizeKey(k).includes("quest"));
 
   let cainRows = 0;
+  const pendingAdds = [];
+  const seenUngated = new Set();
+
+  function keyFor(row) {
+    const npc = String(getVal(row, "npc", "")).toLowerCase();
+    const act = String(getVal(row, "act", "")).toLowerCase();
+    const diff = String(getVal(row, "difficulty", getVal(row, "diff", ""))).toLowerCase();
+    return `${npc}|${act}|${diff}`;
+  }
+
+  function isUngatedQuestRow(row) {
+    if (!questCols.length) return true;
+    return questCols.every((k) => {
+      const v = String(row[k] || "").trim();
+      return v === "" || v === "0";
+    });
+  }
+
+  function hasMagicPortal(row) {
+    return menuCols.map(({ key }) => String(row[key] || "").toLowerCase()).includes("magicportal");
+  }
+
+  tbl.rows.forEach((row) => {
+    const npc = String(getVal(row, "npc", "")).toLowerCase();
+    if (!npc.startsWith("cain")) return;
+    if (hasMagicPortal(row) && isUngatedQuestRow(row)) {
+      seenUngated.add(keyFor(row));
+    }
+  });
+
   tbl.rows.forEach((row) => {
     const npc = String(getVal(row, "npc", "")).toLowerCase();
     if (!npc.startsWith("cain")) return;
     cainRows += 1;
 
-    const existing = menuCols.map(({ key }) => String(row[key] || "").toLowerCase());
-    if (existing.includes("magicportal")) return;
+    if (!hasMagicPortal(row)) {
+      let slot = menuCols.find(({ key }) => {
+        const v = String(row[key] || "").trim().toLowerCase();
+        return v === "" || v === "nul";
+      });
+      if (!slot) slot = menuCols[menuCols.length - 1];
+      row[slot.key] = "MagicPortal";
+    }
 
-    let slot = menuCols.find(({ key }) => {
-      const v = String(row[key] || "").trim().toLowerCase();
-      return v === "" || v === "nul";
+    const sig = keyFor(row);
+    if (seenUngated.has(sig)) return;
+
+    const clone = cloneRow(row);
+    questCols.forEach((k) => {
+      const cur = String(clone[k] || "").trim();
+      clone[k] = cur === "" ? "" : "0";
     });
-    if (!slot) slot = menuCols[menuCols.length - 1];
-    row[slot.key] = "MagicPortal";
+    pendingAdds.push(clone);
+    seenUngated.add(sig);
   });
 
   if (!cainRows) {
     throw new Error("No Cain rows found in NpcMenu (expected npc=cain*)");
+  }
+
+  if (pendingAdds.length) {
+    tbl.rows.push(...pendingAdds);
   }
 
   writeTable(tbl);
@@ -491,8 +536,9 @@ function patchHolyShieldDuration() {
     const cls = String(getVal(row, "charclass", "")).toLowerCase();
     if (skill !== "holy shield" || cls !== "pal") return;
 
-    // 30 hours at 25 frames/second -> 2,700,000 frames
-    setVal(row, "Param1", "2700000");
+    // D2 skill durations are frame-based and effectively capped near 65535 frames.
+    // 65535 / 25 = 2621.4s (~43m 41s), which avoids wrap/overflow behavior.
+    setVal(row, "Param1", "65535");
     setVal(row, "Param2", "0");
   });
 
